@@ -1,10 +1,20 @@
 'use strict';
 
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain } = require('electron');
 const fs = require('fs');
-const path = require('path')
+const path = require('path');
 
-function createWindow(projectDir) {
+const argv = process.argv.slice(2);
+const openDir = argv[0];
+let projectDir;
+if (openDir) {
+    const stat = fs.statSync(openDir);
+    if (stat.isDirectory()) {
+        projectDir = openDir;
+    }
+}
+
+function createWindow() {
     const win = new BrowserWindow({
         width: 800,
         height: 600,
@@ -13,24 +23,11 @@ function createWindow(projectDir) {
         }
     })
 
-    win.loadFile('index.html')
-
-    win.on('')
-
-    if (projectDir) {
-        win.webContents.send('action', 'open', projectDir);
-    }
+    win.loadFile('index.html');
 }
 
 app.whenReady().then(() => {
-    const argv = process.argv.slice(2);
-    const openDir = argv[0];
-    if (openDir) {
-        const stat = fs.statSync(openDir);
-        if (stat.isDirectory()) {
-            createWindow(openDir)
-        }
-    }
+    createWindow()
 
     // const menu = Menu.buildFromTemplate([
     //     {
@@ -139,3 +136,8 @@ app.on('window-all-closed', () => {
         app.quit()
     }
 })
+
+ipcMain.handle('get_project_dir', async (event) => {
+    const [projectDir] = process.argv.slice(2);
+    return projectDir;
+});

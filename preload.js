@@ -4,24 +4,29 @@ const { ipcRenderer } = require('electron');
 const { readdirSync } = require('fs');
 
 window.addEventListener('DOMContentLoaded', () => {
-    // const projectDir = argv[0];
-    // if (projectDir) {
-    //     const stat = fs.statSync(projectDir);
-    //     if (stat.isDirectory()) {
-    //         document.getElementById("folder").innerHTML = readdirSync(projectDir).join('<br />');
-    //     }
-    // }
-})
+    // Renderer process
+    ipcRenderer.invoke('get_project_dir').then((result) => {
+        // ...
+        document.getElementById('title').innerText = result;
+        renderList(result);
+    });
+});
 
-//监听与主进程的通信
+function renderList(projectDir) {
+    const list = readdirSync(projectDir).filter((item) => {
+        console.log(item);
+        return item.endsWith('.graffle');
+    });
+    document.getElementById("folder").innerHTML = list.join('<br />');
+}
+
+// 监听与主进程的通信
 ipcRenderer.on('action', (event, action, ...args) => {
     switch (action) {
         case "open":
-            // remote.process.argv.slice(2);
             const [projectDir] = args;
-            // console.log(action);
             if (projectDir) {
-                document.getElementById("folder").innerHTML = readdirSync(projectDir).join('<br />');
+                renderList(projectDir);
             }
             break;
         default:
