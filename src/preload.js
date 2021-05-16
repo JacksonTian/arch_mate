@@ -67,14 +67,27 @@ class SplitWidget extends Widget {
     }
 }
 
+function delegate(box, eventName, klass, handler) {
+    box.addEventListener(eventName, function (event) {
+        let current = event.target;
+        while (current !== box) {
+            if (current.classList.contains(klass)) {
+                event.current = current;
+                handler(event);
+                break;
+            }
+            current = current.parentElement;
+        }
+    }, false);
+}
+
 class ListWidget extends Widget {
     constructor() {
         super();
         this.element.classList.add('list-widget');
         this.listElement = document.createElement('ul');
         this.element.appendChild(this.listElement);
-
-        this.listElement.addEventListener('click', this._onClick.bind(this), false);
+        delegate(this.listElement, 'click', 'item', this._onClick.bind(this))
     }
 
     addItem(item) {
@@ -83,7 +96,7 @@ class ListWidget extends Widget {
         }
         const i = document.createElement('li');
         i.classList.add('item');
-        i.setAttribute('data-name', item.name);
+        i.setAttribute('data-path', item.path);
         const title = document.createElement('div');
         title.innerText = `${item.name}: is folder: ${item.isFolder}`;
         i.appendChild(title);
@@ -114,10 +127,8 @@ class ListWidget extends Widget {
 
     _onClick(event) {
         console.log(event);
-        const target = event.target;
-        if (target.classList.contains('item')) {
-            console.log(target.getAttribute('data-name'));
-        }
+        let current = event.current;
+        console.log(current.getAttribute('data-path'));
         // var breadcrumbElement = event.target.enclosingNodeOrSelfWithClass('ax-breadcrumb');
         // if (!breadcrumbElement) {
         //   this._setHoveredBreadcrumb(null);
