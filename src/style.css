@@ -61,6 +61,13 @@ body {
 
 .split-widget .side-widget li {
     font-size: 12px;
+    height: 20px;
+    color: rgb(234, 0, 255);
+}
+
+.split-widget .side-widget li:hover {
+    background-color: rgb(225, 241, 241);
+    cursor: pointer;
 }
 
 .split-widget .main-widget {

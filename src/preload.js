@@ -20,21 +20,31 @@ function unzipAsync(buffer) {
 
 const plist = require('plist');
 
+function $(tagName, html) {
+    const node = document.createElement(tagName);
+    node.innerHTML = html;
+    return node;
+}
+
 async function readGraffle(filePath) {
     const content = await readFile(filePath);
-    if (content.readUInt16LE(0) === 0x8b1f) {
+    const starter = content.readUInt16LE(0);
+    if (starter === 0x8b1f) {
         const xml = await unzipAsync(content);
         return plist.parse(xml.toString('utf-8'));
+    } else if (starter === 0x3f3c) {
+        return plist.parse(content.toString('utf-8'));
     } else {
         const zip = new StreamZip.async({ file: filePath });
         const entries = await zip.entries();
         const filteredEntries = Object.values(entries).map((entry) => {
             return {
                 name: entry.name,
-                size: entry.size,
-                dir: entry.isDirectory,
+                size: entry.size
             };
         });
+
+        console.log(filteredEntries);
 
         const entryData = await zip.entryData('data.plist');
         const graffle = plist.parse(entryData.toString('utf-8'));
@@ -160,6 +170,14 @@ class MainWidget extends Widget {
         this.controller.on('preview', (event) => {
             this.preview(event);
         });
+        const filename = document.createElement('div');
+        filename.classList.add('filename');
+        this.element.appendChild(filename);
+        this.filenameElement = filename;
+        const box = document.createElement('div');
+        box.classList.add('preview');
+        this.element.appendChild(box);
+        this.previewBox = box;
         this.currentPath = '';
         delegate(this.element, 'dblclick', 'preview', this._onDBClick.bind(this))
     }
@@ -171,27 +189,23 @@ class MainWidget extends Widget {
     }
 
     async preview(grafflePath) {
-        this.element.innerHTML = 'loading';
         try {
             this.currentPath = grafflePath;
+            this.previewBox.innerHTML = '';
+            this.filenameElement.innerText = grafflePath;
             const graffle = await readGraffle(grafflePath);
-            this.element.innerHTML = '';
-            // console.log(graffle);
+            console.log(graffle);
             if (graffle) {
-                const title = document.createElement('div');
-                title.innerText = graffle['Sheets'].length;
-                this.element.appendChild(title);
-                const box = document.createElement('div');
-                box.classList.add('preview');
+                this.previewBox.appendChild($('div', `版面：${graffle['Sheets'].length}`));
                 if (graffle['!Preview']) {
                     const img = new Image();
                     img.src = 'data:image/jpeg;base64,' + graffle['!Preview'].data.toString('base64');
                     box.appendChild(img);
-                    this.element.appendChild(box);
+                    this.previewBox.appendChild(box);
                 } else {
                     const noPreview = document.createElement('div');
                     noPreview.innerText = "no preview";
-                    this.element.appendChild(noPreview);
+                    this.previewBox.appendChild(noPreview);
                 }
             }
         } catch (ex) {
@@ -227,9 +241,7 @@ async function renderList(sideWidget, projectDir) {
 
     for (let i = 0; i < graffleList.length; i++) {
         const item = graffleList[i];
-        const fileStat = await stat(path.join(projectDir, item));
-        await sideWidget.addItem({
-            isFolder: fileStat.isDirectory(),
+        sideWidget.addItem({
             path: path.join(projectDir, item),
             name: item
         });

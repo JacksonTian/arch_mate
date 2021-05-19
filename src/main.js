@@ -16,17 +16,17 @@ if (openDir) {
 
 function createWindow() {
     const win = new BrowserWindow({
-        show: false,
-        // width: 800,
-        // height: 600,
+        // show: false,
+        width: 2500 / 2,
+        height: 1440 / 2,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
         }
     })
 
     win.loadFile(path.join(__dirname, 'index.html'));
-    win.maximize();
-    win.show();
+    // win.maximize();
+    // win.show();
 }
 
 app.whenReady().then(() => {
