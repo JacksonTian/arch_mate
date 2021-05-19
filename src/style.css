@@ -48,7 +48,7 @@ body {
     display: flex;
 }
 
-.split-widget .list-widget {
+.split-widget .side-widget {
     float: left;
     position: relative;
     width: 300px;
@@ -59,11 +59,20 @@ body {
     overflow: scroll;
 }
 
-.split-widget .preview {
+.split-widget .side-widget li {
+    font-size: 12px;
+}
+
+.split-widget .main-widget {
     height: 100%;
     overflow: scroll;
     border: 1px solid red;
     box-sizing: border-box;
     flex: auto;
     -webkit-box-flex: 1;
+}
+
+.split-widget .main-widget .preview img {
+    max-width: 50%;
+    max-height: 50%;
 }

@@ -1,6 +1,6 @@
 'use strict';
 
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, shell } = require('electron');
 const path = require('path');
 const { readdir, stat, readFile } = require('fs').promises;
 const { unzip } = require('zlib');
@@ -127,7 +127,7 @@ class ListWidget extends Widget {
     constructor(controller) {
         super();
         this.controller = controller;
-        this.element.classList.add('list-widget');
+        this.element.classList.add('side-widget');
         this.listElement = document.createElement('ul');
         this.element.appendChild(this.listElement);
         delegate(this.listElement, 'click', 'item', this._onClick.bind(this))
@@ -152,25 +152,42 @@ class ListWidget extends Widget {
     }
 }
 
-class PreviewWidget extends Widget {
+class MainWidget extends Widget {
     constructor(controller) {
         super();
         this.controller = controller;
-        this.element.classList.add('preview');
+        this.element.classList.add('main-widget');
         this.controller.on('preview', (event) => {
             this.preview(event);
         });
+        this.currentPath = '';
+        delegate(this.element, 'dblclick', 'preview', this._onDBClick.bind(this))
+    }
+
+    _onDBClick(event) {
+        if (this.currentPath) {
+            shell.openPath(this.currentPath);
+        }
     }
 
     async preview(grafflePath) {
-        this.element.innerHTML = '';
+        this.element.innerHTML = 'loading';
         try {
+            this.currentPath = grafflePath;
             const graffle = await readGraffle(grafflePath);
+            this.element.innerHTML = '';
+            // console.log(graffle);
             if (graffle) {
+                const title = document.createElement('div');
+                title.innerText = graffle['Sheets'].length;
+                this.element.appendChild(title);
+                const box = document.createElement('div');
+                box.classList.add('preview');
                 if (graffle['!Preview']) {
                     const img = new Image();
-                    img.src = 'data:image/' + graffle['!Preview'].type + ';base64,' + graffle['!Preview'].data.toString('base64');
-                    this.element.appendChild(img);
+                    img.src = 'data:image/jpeg;base64,' + graffle['!Preview'].data.toString('base64');
+                    box.appendChild(img);
+                    this.element.appendChild(box);
                 } else {
                     const noPreview = document.createElement('div');
                     noPreview.innerText = "no preview";
@@ -194,7 +211,7 @@ async function render() {
         await renderList(sideWidget, projectDir);
     }
     splitWidget.setSideWidget(sideWidget);
-    const mainWidget = new PreviewWidget(controller);
+    const mainWidget = new MainWidget(controller);
     splitWidget.setMainWidget(mainWidget);
     rootView.setWidget(splitWidget);
     rootView.attachToDocument(document.body);
