@@ -57,6 +57,85 @@ async function readGraffle(filePath) {
     }
 }
 
+function parsePoint(point) {
+    const matched = point.match(/\{(\d+\.?\d*),\s*(\d+\.?\d*)\}/);
+    return [matched[1], matched[2]];
+}
+
+function parsePoints(points) {
+    const [p1, p2] = points;
+    const [x1, y1] = parsePoint(p1);
+    const [x2, y2] = parsePoint(p2);
+    return [x1, y1, x2, y2];
+}
+
+function parseBounds(bounds) {
+    const matched = bounds.match(/\{\{(\d+\.?\d*),\s*(\d+\.?\d*)\},\s*\{(\d+\.?\d*),\s*(\d+\.?\d*)\}\}/);
+    return [matched[1], matched[2], matched[4], matched[4]];
+}
+
+function renderGraphic(g) {
+    const svgNS = 'http://www.w3.org/2000/svg';
+    if (g.Class === 'LineGraphic') {
+        const line = document.createElementNS(svgNS, 'line');
+        const [x1, y1, x2, y2] = parsePoints(g.Points);
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        line.setAttribute("style", "stroke:rgb(255,0,0);stroke-width:2");
+        // <line x1="0" y1="0" x2="200" y2="200" style="stroke:rgb(255,0,0);stroke-width:2"/>
+        return line;
+    }
+
+    if (g.Class === 'ShapedGraphic' && g.Shape === 'Rectangle') {
+        var rect = document.createElementNS(svgNS, 'rect');
+        const [x1, y1, x2, y2] = parseBounds(g.Bounds);
+        rect.setAttribute('x', x1);
+        rect.setAttribute('y', y1);
+        // rect.setAttribute('rx', x2);
+        // rect.setAttribute('ry', y2);
+        rect.setAttribute('width', x2);
+        rect.setAttribute('height', y2);
+        rect.setAttribute("style", "stroke:rgb(255,0,0);stroke-width:2");
+        //  <rect x="50" y="20" rx="20" ry="20" width="150" height="150"
+        //   style="fill:red;stroke:black;stroke-width:5;opacity:0.5"/>
+        return rect;
+    }
+
+    if (g.Class === "Group") {
+        for (let j = 0; j < g.Graphics.length; j++) {
+            const gi = g.Graphics[j];
+
+        }
+        return;
+    }
+
+    console.log(g);
+}
+
+function renderGraphics(list) {
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svgEl = document.createElementNS(svgNS, 'svg');
+    const boxWidth = 600;
+    const boxHeight = 600;
+    svgEl.setAttributeNS(null, "viewBox", "0 0 " + boxWidth + " " + boxHeight);
+    svgEl.setAttributeNS(null, "width", boxWidth);
+    svgEl.setAttributeNS(null, "height", boxHeight);
+
+    for (let i = 0; i < list.length; i++) {
+        const g = list[i];
+        const element = renderGraphic(g);
+        if (element) {
+            svgEl.appendChild(element);
+        }
+
+        // svgEl.appendChild(pathEl);
+    }
+    return svgEl;
+    // return $('div', '');
+}
+
 // const [grafflePath] = process.argv.slice(2);
 // const content = readFileSync(grafflePath);
 // const xml = unzipSync(content).toString('utf-8');
@@ -194,18 +273,24 @@ class MainWidget extends Widget {
             this.previewBox.innerHTML = '';
             this.filenameElement.innerText = grafflePath;
             const graffle = await readGraffle(grafflePath);
-            console.log(graffle);
             if (graffle) {
                 this.previewBox.appendChild($('div', `版面：${graffle['Sheets'].length}`));
                 if (graffle['!Preview']) {
                     const img = new Image();
                     img.src = 'data:image/jpeg;base64,' + graffle['!Preview'].data.toString('base64');
+                    const box = $('div', '');
                     box.appendChild(img);
                     this.previewBox.appendChild(box);
                 } else {
                     const noPreview = document.createElement('div');
                     noPreview.innerText = "no preview";
                     this.previewBox.appendChild(noPreview);
+                }
+                for (let i = 0; i < graffle['Sheets'].length; i++) {
+                    const sheet = graffle['Sheets'][i];
+                    console.log(sheet);
+                    this.previewBox.appendChild($('div', `${sheet.SheetTitle} 形状数量：${sheet.GraphicsList.length}`));
+                    this.previewBox.appendChild(renderGraphics(sheet.GraphicsList));
                 }
             }
         } catch (ex) {
