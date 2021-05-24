@@ -5,6 +5,9 @@ const path = require('path');
 const { readdir, stat, readFile } = require('fs').promises;
 const { unzip } = require('zlib');
 const StreamZip = require('node-stream-zip');
+const icc = require('icc');
+const iconv = require('iconv-lite');
+const rtf = require('@jacksontian/rtf-parse');
 const { EventEmitter } = require('events');
 
 function unzipAsync(buffer) {
@@ -58,68 +61,214 @@ async function readGraffle(filePath) {
 }
 
 function parsePoint(point) {
-    const matched = point.match(/\{(\d+\.?\d*),\s*(\d+\.?\d*)\}/);
-    return [matched[1], matched[2]];
-}
-
-function parsePoints(points) {
-    const [p1, p2] = points;
-    const [x1, y1] = parsePoint(p1);
-    const [x2, y2] = parsePoint(p2);
-    return [x1, y1, x2, y2];
+    const matched = point.match(/\{(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\}/);
+    return [parseFloat(matched[1]), parseFloat(matched[2])];
 }
 
 function parseBounds(bounds) {
-    const matched = bounds.match(/\{\{(\d+\.?\d*),\s*(\d+\.?\d*)\},\s*\{(\d+\.?\d*),\s*(\d+\.?\d*)\}\}/);
-    return [matched[1], matched[2], matched[4], matched[4]];
+    const matched = bounds.match(/\{\{(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\},\s*\{(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\}\}/);
+    return [parseFloat(matched[1]), parseFloat(matched[2]), parseFloat(matched[3]), parseFloat(matched[4])];
+}
+
+const colorMap = {
+    'systemRedColor': 'red'
+};
+
+const pattern = {
+    '1': '5,5',
+    '2': '1,4'
+};
+
+function getPath(path) {
+    let data = '';
+    for (let i = 0; i < path.elements.length; i++) {
+        const d = path.elements[i];
+        let [x, y] = parsePoint(d.point);
+        if (i > 0) {
+            data += ' ';
+        }
+        switch (d.element) {
+            case 'MOVETO':
+                data += `M${x} ${y}`;
+                break;
+            case 'LINETO':
+                data += `L${x} ${y}`;
+                break;
+            case 'CURVETO':
+                let [c1x, c1y] = parsePoint(d.control1);
+                let [c2x, c2y] = parsePoint(d.control2);
+                data += `C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x} ${y}`;
+                break;
+            default:
+                console.log(d);
+                break;
+        }
+        // console.log(d);0: {element: "MOVETO", point: "{451.5, 132.5}"}
+        // 1: {control1: "{451.5, 132.5}", control2: "{496.91744145677217, 37.80016998053074}", element: "CURVETO", point: "{588, 39.5}"}
+        // 2: {control1: "{679.08255854322783, 41.19983001946926}", control2: "{773, 138.5}", element: "CURVETO", point: "{773, 138.5}"}
+    }
+    return data;
+}
+
+function getWidth(stroke, defValue = 1) {
+    if (!stroke || !stroke.Width) {
+        return defValue;
+    }
+    return stroke.Width;
+}
+
+function parseColor(d, defValue = 'none') {
+    if (!d || !d.Color) {
+        return defValue;
+    }
+
+    const c = d.Color;
+    if (c.catalog === 'System') {
+        console.log(c);
+        return colorMap[c.name];
+    }
+
+    if (c.space === 'srgb') {
+        return `rgb(${Math.floor(c.r * 256)}, ${Math.floor(c.g * 256)}, ${Math.floor(c.b * 256)})`;
+    }
+
+    return `rgb(${c.r}, ${c.g}, ${c.b})`;
+}
+
+function decodeText(text) {
+    const codes = [];
+    let i = 0;
+    while (i < text.length) {
+        if (text[i] === '\\') {
+            const code = text[i + 2] + text[i + 3];
+            codes.push(parseInt(code, 16));
+            i = i + 4;
+        } else {
+            codes.push(text[i].charCodeAt(0));
+            i = i + 1;
+        }
+    }
+    return iconv.decode(Buffer.from(codes), 'gb2312');
+}
+
+function getText(text) {
+    const doc = rtf.parse(text);
+    const group = doc.children[0];
+    const t = group.children[group.children.length - 1];
+    return decodeText(t.value);
 }
 
 function renderGraphic(g) {
     const svgNS = 'http://www.w3.org/2000/svg';
     if (g.Class === 'LineGraphic') {
-        const line = document.createElementNS(svgNS, 'line');
-        const [x1, y1, x2, y2] = parsePoints(g.Points);
-        line.setAttribute('x1', x1);
-        line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2);
-        line.setAttribute('y2', y2);
-        line.setAttribute("style", "stroke:rgb(255,0,0);stroke-width:2");
+        const path = document.createElementNS(svgNS, 'path');
+//         <path d="M 175 200 l 150 0" stroke="green" stroke-width="3"
+//   fill="none" />
+        path.setAttribute('d', getPath(g.LogicalPath));
+        path.setAttribute("style", `stroke:${parseColor(g.Style.stroke, 'black')};stroke-width:1`);
+        if (g.Style.fill && g.Style.fill.Draws === 'NO') {
+            path.setAttribute('fill', 'none');
+        } else {
+            path.setAttribute("fill", parseColor(g.Style.fill, 'none'));
+        }
+        if (g.Style.stroke.Pattern) {
+            path.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+        }
         // <line x1="0" y1="0" x2="200" y2="200" style="stroke:rgb(255,0,0);stroke-width:2"/>
-        return line;
+        return path;
     }
 
-    if (g.Class === 'ShapedGraphic' && g.Shape === 'Rectangle') {
-        var rect = document.createElementNS(svgNS, 'rect');
-        const [x1, y1, x2, y2] = parseBounds(g.Bounds);
+    if (g.Class === 'ShapedGraphic' && g.Shape === 'Circle') {
+//         <ellipse cx="300" cy="80" rx="100" ry="50"
+//   style="fill:yellow;stroke:purple;stroke-width:2"/>
+        const ellipse = document.createElementNS(svgNS, 'ellipse');
+        const [x1, y1, width, height] = parseBounds(g.Bounds);
+        ellipse.setAttribute('cx', x1 + width / 2);
+        ellipse.setAttribute('cy', y1 + height / 2);
+        ellipse.setAttribute('rx', width / 2);
+        ellipse.setAttribute('ry', height / 2);
+        if (g.Style.stroke && g.Style.stroke.Draws === 'NO') {
+            ellipse.setAttribute("style", `fill:${parseColor(g.Style.fill, 'none')};stroke:none;stroke-width:1`);
+        } else {
+            ellipse.setAttribute("style", `fill:${parseColor(g.Style.fill, 'none')};stroke:${parseColor(g.Style.stroke, 'black')};stroke-width:${getWidth(g.Style.stroke, 1)}`);
+        }
+        // if (g.Style.stroke && g.Style.stroke.Pattern) {
+        //     rect.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+        // }
+        return ellipse;
+    }
+
+    if (g.Class === 'ShapedGraphic') {
+        const rect = document.createElementNS(svgNS, 'rect');
+        const [x1, y1, width, height] = parseBounds(g.Bounds);
         rect.setAttribute('x', x1);
         rect.setAttribute('y', y1);
         // rect.setAttribute('rx', x2);
         // rect.setAttribute('ry', y2);
-        rect.setAttribute('width', x2);
-        rect.setAttribute('height', y2);
-        rect.setAttribute("style", "stroke:rgb(255,0,0);stroke-width:2");
+        rect.setAttribute('width', width);
+        rect.setAttribute('height', height);
+        if (g.Style.stroke && g.Style.stroke.Draws === 'NO') {
+            rect.setAttribute("style", `fill:${parseColor(g.Style.fill, 'none')};stroke:none;stroke-width:1`);
+        } else {
+            rect.setAttribute("style", `fill:${parseColor(g.Style.fill, 'none')};stroke:${parseColor(g.Style.stroke, 'black')};stroke-width:${getWidth(g.Style.stroke, 1)}`);
+        }
+        if (g.Style.stroke && g.Style.stroke.Pattern) {
+            rect.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+        }
         //  <rect x="50" y="20" rx="20" ry="20" width="150" height="150"
         //   style="fill:red;stroke:black;stroke-width:5;opacity:0.5"/>
+        if (g.Text.Text) {
+            const text = document.createElementNS(svgNS, 'text');
+            if (g.Text.TextAlongPathGlyphAnchor === 'center') {
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('dominant-baseline', 'middle');
+                text.setAttribute('x', x1 + width / 2);
+                text.setAttribute('y', y1 + height / 2);
+            }
+
+            text.textContent = getText(g.Text.Text);
+            // <text x="0" y="15" fill="red">I love SVG</text>
+
+            const gc = document.createElementNS(svgNS, 'g');
+            gc.appendChild(rect);
+            gc.appendChild(text);
+            return gc;
+        }
+
         return rect;
     }
 
     if (g.Class === "Group") {
         for (let j = 0; j < g.Graphics.length; j++) {
             const gi = g.Graphics[j];
-
+            consnole.log(gi);
         }
+        throw new Error('hehe');
         return;
     }
+
+    if (g.Class === 'ShapedGraphic') {
+
+    }
+    //     Bounds: "{{0, 0}, {15, 22}}"
+    // Class: "ShapedGraphic"
+    // FitText: "YES"
+    // Flow: "Resize"
+    // ID: 2
+    // Style: {fill: {…}, shadow: {…}, stroke: {…}}
+    // Text: {TextAlongPathGlyphAnchor: "center"}
+    // Wrap: "NO"
 
     console.log(g);
 }
 
-function renderGraphics(list) {
+function renderGraphics(sheet) {
+    const list = sheet.GraphicsList;
     const svgNS = 'http://www.w3.org/2000/svg';
     const svgEl = document.createElementNS(svgNS, 'svg');
-    const boxWidth = 600;
-    const boxHeight = 600;
-    svgEl.setAttributeNS(null, "viewBox", "0 0 " + boxWidth + " " + boxHeight);
+    const [boxWidth, boxHeight] = parsePoint(sheet.CanvasSize);
+    const [originX, originY] = parsePoint(sheet.CanvasDimensionsOrigin);
+    svgEl.setAttributeNS(null, "viewBox", `${originX} ${originY} ${boxWidth} ${boxHeight}`);
     svgEl.setAttributeNS(null, "width", boxWidth);
     svgEl.setAttributeNS(null, "height", boxHeight);
 
@@ -129,7 +278,6 @@ function renderGraphics(list) {
         if (element) {
             svgEl.appendChild(element);
         }
-
         // svgEl.appendChild(pathEl);
     }
     return svgEl;
@@ -274,6 +422,10 @@ class MainWidget extends Widget {
             this.filenameElement.innerText = grafflePath;
             const graffle = await readGraffle(grafflePath);
             if (graffle) {
+                // TODO: Color Profiles
+                // console.log(graffle);
+                // console.log(icc.parse(graffle['ColorProfiles'][0].data));
+                // Buffer.from(, 'base64').toString('utf8'));
                 this.previewBox.appendChild($('div', `版面：${graffle['Sheets'].length}`));
                 if (graffle['!Preview']) {
                     const img = new Image();
@@ -290,7 +442,7 @@ class MainWidget extends Widget {
                     const sheet = graffle['Sheets'][i];
                     console.log(sheet);
                     this.previewBox.appendChild($('div', `${sheet.SheetTitle} 形状数量：${sheet.GraphicsList.length}`));
-                    this.previewBox.appendChild(renderGraphics(sheet.GraphicsList));
+                    this.previewBox.appendChild(renderGraphics(sheet));
                 }
             }
         } catch (ex) {
