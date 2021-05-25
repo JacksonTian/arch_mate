@@ -30,6 +30,11 @@ function $(tagName, html) {
 }
 
 async function readGraffle(filePath) {
+    const st = await stat(filePath);
+    if (st.isDirectory()) {
+        return await readGraffle(path.join(filePath, 'data.plist'));
+    }
+
     const content = await readFile(filePath);
     const starter = content.readUInt16LE(0);
     if (starter === 0x8b1f) {
@@ -162,8 +167,7 @@ function renderGraphic(g) {
     const svgNS = 'http://www.w3.org/2000/svg';
     if (g.Class === 'LineGraphic') {
         const path = document.createElementNS(svgNS, 'path');
-//         <path d="M 175 200 l 150 0" stroke="green" stroke-width="3"
-//   fill="none" />
+        // <path d="M 175 200 l 150 0" stroke="green" stroke-width="3" fill="none" />
         path.setAttribute('d', getPath(g.LogicalPath));
         path.setAttribute("style", `stroke:${parseColor(g.Style.stroke, 'black')};stroke-width:1`);
         if (g.Style.fill && g.Style.fill.Draws === 'NO') {
