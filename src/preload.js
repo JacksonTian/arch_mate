@@ -194,19 +194,33 @@ function wrapText(item, text, x, y, width, height) {
 function createDefs() {
   const defs = document.createElementNS(svgNS, 'defs');
   const marker = document.createElementNS(svgNS, 'marker');
-  marker.setAttribute('id', 'StickArrow');
-  marker.setAttribute('viewBox', '0 0 20 20');
-  marker.setAttribute('refX', 0);
-  marker.setAttribute('refY', 10);
-  marker.setAttribute('markerUnits', 'strokeWidth');
-  marker.setAttribute('markerWidth', 3);
+  marker.setAttribute('id', 'stick_arrow');
+  // marker.setAttribute('viewBox', '0 0 20 20');
+  marker.setAttribute('refX', 10);
+  marker.setAttribute('refY', 6);
+  // marker.setAttribute('markerUnits', 'strokeWidth');
+  marker.setAttribute('markerWidth', 10);
   marker.setAttribute('markerHeight', 10);
   marker.setAttribute('orient', 'auto');
   const path = document.createElementNS(svgNS, 'path');
-  path.setAttribute('d', 'M2,2 L10,6 L2,10 L6,6 L2,2');
+  path.setAttribute('d', 'M2,2 L10,6 L2,10 L6,6 z');
   path.style.setProperty('fill', '#000000');
   marker.appendChild(path);
   defs.appendChild(marker);
+  const marker2 = document.createElementNS(svgNS, 'marker');
+  marker2.setAttribute('id', 'stick_arrow2');
+  // marker.setAttribute('viewBox', '0 0 20 20');
+  marker2.setAttribute('refX', 2);
+  marker2.setAttribute('refY', 6);
+  // marker.setAttribute('markerUnits', 'strokeWidth');
+  marker2.setAttribute('markerWidth', 10);
+  marker2.setAttribute('markerHeight', 10);
+  marker2.setAttribute('orient', 'auto');
+  const path2 = document.createElementNS(svgNS, 'path');
+  path2.setAttribute('d', 'M8,2 L0,6 L8,10 L4,6 z');
+  path2.style.setProperty('fill', '#000000');
+  marker2.appendChild(path2);
+  defs.appendChild(marker2);
   return defs;
 }
 
@@ -228,11 +242,11 @@ function renderGraphic(g) {
     }
 
     if (g.Style.stroke?.HeadArrow === 'StickArrow') {
-      path.setAttribute('marker-start', 'url(#StickArrow)');
+      path.setAttribute('marker-end', 'url(#stick_arrow)');
     }
 
     if (g.Style.stroke?.TailArrow === 'StickArrow') {
-      path.setAttribute('marker-end', 'url(#StickArrow)');
+      path.setAttribute('marker-start', 'url(#stick_arrow2)');
     }
 
     if (g.Style.stroke.Pattern) {
@@ -323,11 +337,12 @@ function renderGraphic(g) {
   }
 
   if (g.Class === 'Group') {
+    const gg = document.createElementNS(svgNS, 'g');
     for (let j = 0; j < g.Graphics.length; j++) {
       const gi = g.Graphics[j];
-      renderGraphic(gi);
+      gg.appendChild(renderGraphic(gi));
     }
-    return;
+    return gg;
   }
 
   if (g.Class === 'ShapedGraphic') {
