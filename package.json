@@ -5,10 +5,12 @@
   "description": "My Electron app",
   "main": "src/main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "lint": "eslint --fix ./src"
   },
   "devDependencies": {
-    "electron": "^12.0.7"
+    "electron": "^12.0.7",
+    "eslint": "^7.29.0"
   },
   "dependencies": {
     "icc": "^2.0.0",
