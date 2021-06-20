@@ -9,9 +9,11 @@ const StreamZip = require('node-stream-zip');
 // const icc = require('icc');
 const iconv = require('iconv-lite');
 const rtf = require('@jacksontian/rtf-parser');
-const { EventEmitter } = require('events');
 
 const helper = require('./helper');
+const { Controller } = require('./ui');
+
+const svgNS = 'http://www.w3.org/2000/svg';
 
 function unzipAsync(buffer) {
   return new Promise((resolve, reject) => {
@@ -45,7 +47,7 @@ async function readGraffle(filePath) {
     return plist.parse(xml.toString('utf-8'));
   } else if (starter === 0x3f3c) {
     return plist.parse(content.toString('utf-8'));
-  } 
+  }
   const zip = new StreamZip.async({ file: filePath });
   const entries = await zip.entries();
   const filteredEntries = Object.values(entries).map((entry) => {
@@ -65,7 +67,7 @@ async function readGraffle(filePath) {
   };
   await zip.close();
   return graffle;
-    
+
 }
 
 const colorMap = {
@@ -74,7 +76,8 @@ const colorMap = {
 
 const pattern = {
   '1': '5,5',
-  '2': '1,4'
+  '2': '1,4',
+  '5': '3,4'
 };
 
 function getLogicalPath(path) {
@@ -110,10 +113,17 @@ function getLogicalPath(path) {
 }
 
 function getPath(points) {
-  const [p1, p2] = points;
+  const [p1, ...ps] = points;
   const [x1, y1] = helper.parsePoint(p1);
-  const [x2, y2] = helper.parsePoint(p2);
-  return `M${x1} ${y1}L${x2} ${y2}`;
+  let data = `M${x1} ${y1}`;
+  for (let i = 0; i < ps.length; i++) {
+    const p = ps[i];
+    const [x, y] = helper.parsePoint(p);
+    data += `L${x} ${y}`;
+  }
+  // // close path
+  // data += 'Z';
+  return data;
 }
 
 function getWidth(stroke, defValue = 1) {
@@ -130,11 +140,11 @@ function parseColor(d, defValue = 'none') {
 
   const c = d.Color;
   if (c.catalog === 'System') {
-    console.log(c);
     return colorMap[c.name];
   }
 
-  if (c.space === 'srgb') {
+  // if (c.space !== 'srgb') {
+  if (c.space !== '') {
     return `rgb(${Math.floor(c.r * 256)}, ${Math.floor(c.g * 256)}, ${Math.floor(c.b * 256)})`;
   }
 
@@ -164,8 +174,43 @@ function getText(text) {
   return decodeText(t.value);
 }
 
+function wrapText(item, text, x, y, width, height) {
+  const t = document.createElementNS(svgNS, 'text');
+  // if (g.Text.TextAlongPathGlyphAnchor === 'center') {
+  t.setAttribute('text-anchor', 'middle');
+  t.setAttribute('dominant-baseline', 'middle');
+  t.setAttribute('x', x + width / 2);
+  t.setAttribute('y', y + height / 2);
+  // }
+
+  t.textContent = getText(text);
+  // <text x="0" y="15" fill="red">I love SVG</text>
+  const gc = document.createElementNS(svgNS, 'g');
+  gc.appendChild(item);
+  gc.appendChild(t);
+  return gc;
+}
+
+function createDefs() {
+  const defs = document.createElementNS(svgNS, 'defs');
+  const marker = document.createElementNS(svgNS, 'marker');
+  marker.setAttribute('id', 'StickArrow');
+  marker.setAttribute('viewBox', '0 0 20 20');
+  marker.setAttribute('refX', 0);
+  marker.setAttribute('refY', 10);
+  marker.setAttribute('markerUnits', 'strokeWidth');
+  marker.setAttribute('markerWidth', 3);
+  marker.setAttribute('markerHeight', 10);
+  marker.setAttribute('orient', 'auto');
+  const path = document.createElementNS(svgNS, 'path');
+  path.setAttribute('d', 'M2,2 L10,6 L2,10 L6,6 L2,2');
+  path.style.setProperty('fill', '#000000');
+  marker.appendChild(path);
+  defs.appendChild(marker);
+  return defs;
+}
+
 function renderGraphic(g) {
-  const svgNS = 'http://www.w3.org/2000/svg';
   if (g.Class === 'LineGraphic') {
     const path = document.createElementNS(svgNS, 'path');
     // <path d="M 175 200 l 150 0" stroke="green" stroke-width="3" fill="none" />
@@ -181,6 +226,15 @@ function renderGraphic(g) {
     } else {
       path.setAttribute('fill', parseColor(g.Style?.fill, 'none'));
     }
+
+    if (g.Style.stroke?.HeadArrow === 'StickArrow') {
+      path.setAttribute('marker-start', 'url(#StickArrow)');
+    }
+
+    if (g.Style.stroke?.TailArrow === 'StickArrow') {
+      path.setAttribute('marker-end', 'url(#StickArrow)');
+    }
+
     if (g.Style.stroke.Pattern) {
       path.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
     }
@@ -205,7 +259,38 @@ function renderGraphic(g) {
     // if (g.Style.stroke && g.Style.stroke.Pattern) {
     //     rect.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
     // }
+
+    if (g.Text?.Text) {
+      return wrapText(ellipse, g.Text?.Text, x1, y1, width, height);
+    }
+
     return ellipse;
+  }
+
+  if (g.Class === 'ShapedGraphic' && g.Shape === 'Diamond') {
+    const polygon = document.createElementNS(svgNS, 'polygon');
+    const [x, y, width, height] = helper.parseBounds(g.Bounds);
+    const p1 = [x + width / 2, y].join(',');
+    const p2 = [x + width, y + height / 2].join(',');
+    const p3 = [x + width / 2, y + height].join(',');
+    const p4 = [x, y + height / 2].join(',');
+    polygon.setAttribute('points', [p1, p2, p3, p4].join(' '));
+    //   <polygon points="200,10 250,190 160,210"
+    // style="fill:lime;stroke:purple;stroke-width:1"/>
+    if (g.Style?.stroke?.Draws === 'NO') {
+      polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
+    } else {
+      polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
+    }
+    if (g.Style?.stroke?.Pattern) {
+      polygon.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+    }
+
+    if (g.Text?.Text) {
+      return wrapText(polygon, g.Text?.Text, x, y, width, height);
+    }
+
+    return polygon;
   }
 
   if (g.Class === 'ShapedGraphic') {
@@ -213,8 +298,11 @@ function renderGraphic(g) {
     const [x1, y1, width, height] = helper.parseBounds(g.Bounds);
     rect.setAttribute('x', x1);
     rect.setAttribute('y', y1);
-    // rect.setAttribute('rx', x2);
-    // rect.setAttribute('ry', y2);
+    // 圆角
+    const r = g.Style?.stroke?.CornerRadius || 0;
+    rect.setAttribute('rx', r);
+    rect.setAttribute('ry', r);
+
     rect.setAttribute('width', width);
     rect.setAttribute('height', height);
     if (g.Style?.stroke?.Draws === 'NO') {
@@ -228,21 +316,7 @@ function renderGraphic(g) {
     //  <rect x="50" y="20" rx="20" ry="20" width="150" height="150"
     //   style="fill:red;stroke:black;stroke-width:5;opacity:0.5"/>
     if (g.Text?.Text) {
-      const text = document.createElementNS(svgNS, 'text');
-      if (g.Text.TextAlongPathGlyphAnchor === 'center') {
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('dominant-baseline', 'middle');
-        text.setAttribute('x', x1 + width / 2);
-        text.setAttribute('y', y1 + height / 2);
-      }
-
-      text.textContent = getText(g.Text.Text);
-      // <text x="0" y="15" fill="red">I love SVG</text>
-
-      const gc = document.createElementNS(svgNS, 'g');
-      gc.appendChild(rect);
-      gc.appendChild(text);
-      return gc;
+      return wrapText(rect, g.Text?.Text, x1, y1, width, height);
     }
 
     return rect;
@@ -279,7 +353,10 @@ function renderGraphics(sheet) {
   const [boxWidth, boxHeight] = sheet.CanvasSize ? helper.parsePoint(sheet.CanvasSize) : [500, 500];
   svgEl.setAttributeNS(null, 'width', boxWidth);
   svgEl.setAttributeNS(null, 'height', boxHeight);
-  svgEl.setAttributeNS(null, 'viewBox', `${originX}, ${originY}, ${boxWidth}, ${boxHeight}`);
+  svgEl.setAttributeNS(null, 'viewBox', `${originX} ${originY} ${boxWidth} ${boxHeight}`);
+
+  svgEl.appendChild(createDefs());
+
   for (let i = 0; i < list.length; i++) {
     const g = list[i];
     const element = renderGraphic(g);
@@ -290,20 +367,6 @@ function renderGraphics(sheet) {
   }
   return svgEl;
   // return $('div', '');
-}
-
-// const [grafflePath] = process.argv.slice(2);
-// const content = readFileSync(grafflePath);
-// const xml = unzipSync(content).toString('utf-8');
-// const graffle = plist.parse(xml);
-
-// writeFileSync(grafflePath + '.' + graffle['!Preview'].type, graffle['!Preview'].data);
-// console.log(graffle.ApplicationVersion.join(':'));
-// console.log(graffle.CreationDate);
-// console.log(graffle.Creator);
-
-class Controller extends EventEmitter {
-
 }
 
 class Widget {
@@ -476,17 +539,24 @@ async function renderList(sideWidget, projectDir) {
 
 async function render() {
   const controller = new Controller();
-  const rootView = new RootView(controller);
-  const splitWidget = new SplitWidget(controller);
-  const sideWidget = new ListWidget(controller);
+
   const projectDir = await ipcRenderer.invoke('get_project_dir');
   if (projectDir) {
     document.title = projectDir;
+  }
+
+  const rootView = new RootView(controller);
+  const splitWidget = new SplitWidget(controller);
+  const sideWidget = new ListWidget(controller);
+
+  if (projectDir) {
     await renderList(sideWidget, projectDir);
   }
+
   splitWidget.setSideWidget(sideWidget);
   const mainWidget = new MainWidget(controller);
   splitWidget.setMainWidget(mainWidget);
+
   rootView.setWidget(splitWidget);
   rootView.attachToDocument(document.body);
 }
