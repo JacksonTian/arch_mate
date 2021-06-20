@@ -7,7 +7,7 @@ const { unzip } = require('zlib');
 const StreamZip = require('node-stream-zip');
 const icc = require('icc');
 const iconv = require('iconv-lite');
-const rtf = require('@jacksontian/rtf-parse');
+const rtf = require('@jacksontian/rtf-parser');
 const { EventEmitter } = require('events');
 
 function unzipAsync(buffer) {
