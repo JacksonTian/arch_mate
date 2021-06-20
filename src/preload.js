@@ -84,7 +84,7 @@ const pattern = {
     '2': '1,4'
 };
 
-function getPath(path) {
+function getLogicalPath(path) {
     let data = '';
     for (let i = 0; i < path.elements.length; i++) {
         const d = path.elements[i];
@@ -113,6 +113,13 @@ function getPath(path) {
         // 2: {control1: "{679.08255854322783, 41.19983001946926}", control2: "{773, 138.5}", element: "CURVETO", point: "{773, 138.5}"}
     }
     return data;
+}
+
+function getPath(points) {
+    const [p1, p2] = points;
+    const [x1, y1] = parsePoint(p1);
+    const [x2, y2] = parsePoint(p2);
+    return `M${x1} ${y1}L${x2} ${y2}`;
 }
 
 function getWidth(stroke, defValue = 1) {
@@ -168,12 +175,17 @@ function renderGraphic(g) {
     if (g.Class === 'LineGraphic') {
         const path = document.createElementNS(svgNS, 'path');
         // <path d="M 175 200 l 150 0" stroke="green" stroke-width="3" fill="none" />
-        path.setAttribute('d', getPath(g.LogicalPath));
+        if (g.LogicalPath) {
+            path.setAttribute('d', getLogicalPath(g.LogicalPath));
+        } else {
+            path.setAttribute('d', getPath(g.Points));
+        }
+
         path.setAttribute("style", `stroke:${parseColor(g.Style.stroke, 'black')};stroke-width:1`);
         if (g.Style.fill && g.Style.fill.Draws === 'NO') {
             path.setAttribute('fill', 'none');
         } else {
-            path.setAttribute("fill", parseColor(g.Style.fill, 'none'));
+            path.setAttribute("fill", parseColor(g.Style?.fill, 'none'));
         }
         if (g.Style.stroke.Pattern) {
             path.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
@@ -211,17 +223,17 @@ function renderGraphic(g) {
         // rect.setAttribute('ry', y2);
         rect.setAttribute('width', width);
         rect.setAttribute('height', height);
-        if (g.Style.stroke && g.Style.stroke.Draws === 'NO') {
-            rect.setAttribute("style", `fill:${parseColor(g.Style.fill, 'none')};stroke:none;stroke-width:1`);
+        if (g.Style?.stroke?.Draws === 'NO') {
+            rect.setAttribute("style", `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
         } else {
-            rect.setAttribute("style", `fill:${parseColor(g.Style.fill, 'none')};stroke:${parseColor(g.Style.stroke, 'black')};stroke-width:${getWidth(g.Style.stroke, 1)}`);
+            rect.setAttribute("style", `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
         }
-        if (g.Style.stroke && g.Style.stroke.Pattern) {
+        if (g.Style?.stroke?.Pattern) {
             rect.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
         }
         //  <rect x="50" y="20" rx="20" ry="20" width="150" height="150"
         //   style="fill:red;stroke:black;stroke-width:5;opacity:0.5"/>
-        if (g.Text.Text) {
+        if (g.Text?.Text) {
             const text = document.createElementNS(svgNS, 'text');
             if (g.Text.TextAlongPathGlyphAnchor === 'center') {
                 text.setAttribute('text-anchor', 'middle');
@@ -245,14 +257,13 @@ function renderGraphic(g) {
     if (g.Class === "Group") {
         for (let j = 0; j < g.Graphics.length; j++) {
             const gi = g.Graphics[j];
-            consnole.log(gi);
+            renderGraphic(gi);
         }
-        throw new Error('hehe');
         return;
     }
 
     if (g.Class === 'ShapedGraphic') {
-
+        throw new Error('hehe');
     }
     //     Bounds: "{{0, 0}, {15, 22}}"
     // Class: "ShapedGraphic"
@@ -270,12 +281,11 @@ function renderGraphics(sheet) {
     const list = sheet.GraphicsList;
     const svgNS = 'http://www.w3.org/2000/svg';
     const svgEl = document.createElementNS(svgNS, 'svg');
-    const [boxWidth, boxHeight] = parsePoint(sheet.CanvasSize);
-    const [originX, originY] = parsePoint(sheet.CanvasDimensionsOrigin);
-    svgEl.setAttributeNS(null, "viewBox", `${originX} ${originY} ${boxWidth} ${boxHeight}`);
+    const [originX, originY] = sheet.CanvasDimensionsOrigin ? parsePoint(sheet.CanvasDimensionsOrigin) : [0, 0];
+    const [boxWidth, boxHeight] = sheet.CanvasSize ? parsePoint(sheet.CanvasSize) : [500, 500];
     svgEl.setAttributeNS(null, "width", boxWidth);
     svgEl.setAttributeNS(null, "height", boxHeight);
-
+    svgEl.setAttributeNS(null, "viewBox", `${originX}, ${originY}, ${boxWidth}, ${boxHeight}`);
     for (let i = 0; i < list.length; i++) {
         const g = list[i];
         const element = renderGraphic(g);
