@@ -13,6 +13,8 @@ const rtf = require('@jacksontian/rtf-parser');
 const helper = require('./helper');
 const { Controller } = require('./ui');
 
+const arrows = require('./arrows');
+
 const svgNS = 'http://www.w3.org/2000/svg';
 
 function unzipAsync(buffer) {
@@ -79,52 +81,6 @@ const pattern = {
   '2': '1,4',
   '5': '3,4'
 };
-
-function getLogicalPath(path) {
-  let data = '';
-  for (let i = 0; i < path.elements.length; i++) {
-    const d = path.elements[i];
-    let [x, y] = helper.parsePoint(d.point);
-    if (i > 0) {
-      data += ' ';
-    }
-    switch (d.element) {
-    case 'MOVETO':
-      data += `M${x} ${y}`;
-      break;
-    case 'LINETO':
-      data += `L${x} ${y}`;
-      break;
-    case 'CURVETO': {
-      let [c1x, c1y] = helper.parsePoint(d.control1);
-      let [c2x, c2y] = helper.parsePoint(d.control2);
-      data += `C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x} ${y}`;
-    }
-      break;
-    default:
-      console.log(d);
-      break;
-    }
-    // console.log(d);0: {element: "MOVETO", point: "{451.5, 132.5}"}
-    // 1: {control1: "{451.5, 132.5}", control2: "{496.91744145677217, 37.80016998053074}", element: "CURVETO", point: "{588, 39.5}"}
-    // 2: {control1: "{679.08255854322783, 41.19983001946926}", control2: "{773, 138.5}", element: "CURVETO", point: "{773, 138.5}"}
-  }
-  return data;
-}
-
-function getPath(points) {
-  const [p1, ...ps] = points;
-  const [x1, y1] = helper.parsePoint(p1);
-  let data = `M${x1} ${y1}`;
-  for (let i = 0; i < ps.length; i++) {
-    const p = ps[i];
-    const [x, y] = helper.parsePoint(p);
-    data += `L${x} ${y}`;
-  }
-  // // close path
-  // data += 'Z';
-  return data;
-}
 
 function getWidth(stroke, defValue = 1) {
   if (!stroke || !stroke.Width) {
@@ -193,121 +149,320 @@ function wrapText(item, text, x, y, width, height) {
 
 function createDefs() {
   const defs = document.createElementNS(svgNS, 'defs');
-  const marker = document.createElementNS(svgNS, 'marker');
-  marker.setAttribute('id', 'stick_arrow');
-  // marker.setAttribute('viewBox', '0 0 20 20');
-  marker.setAttribute('refX', 10);
-  marker.setAttribute('refY', 6);
-  // marker.setAttribute('markerUnits', 'strokeWidth');
-  marker.setAttribute('markerWidth', 10);
-  marker.setAttribute('markerHeight', 10);
-  marker.setAttribute('orient', 'auto');
-  const path = document.createElementNS(svgNS, 'path');
-  path.setAttribute('d', 'M2,2 L10,6 L2,10 L6,6 z');
-  path.style.setProperty('fill', '#000000');
-  marker.appendChild(path);
-  defs.appendChild(marker);
-  const marker2 = document.createElementNS(svgNS, 'marker');
-  marker2.setAttribute('id', 'stick_arrow2');
-  // marker.setAttribute('viewBox', '0 0 20 20');
-  marker2.setAttribute('refX', 2);
-  marker2.setAttribute('refY', 6);
-  // marker.setAttribute('markerUnits', 'strokeWidth');
-  marker2.setAttribute('markerWidth', 10);
-  marker2.setAttribute('markerHeight', 10);
-  marker2.setAttribute('orient', 'auto');
-  const path2 = document.createElementNS(svgNS, 'path');
-  path2.setAttribute('d', 'M8,2 L0,6 L8,10 L4,6 z');
-  path2.style.setProperty('fill', '#000000');
-  marker2.appendChild(path2);
-  defs.appendChild(marker2);
+  defs.appendChild(arrows.createStickArrowHead());
+  defs.appendChild(arrows.createStickArrowTail());
+  defs.appendChild(arrows.createArrowHead());
+  defs.appendChild(arrows.createArrowTail());
+  defs.appendChild(arrows.createUMLInheritanceHead());
+  defs.appendChild(arrows.createUMLInheritanceTail());
   return defs;
 }
 
-function renderGraphic(g) {
+function renderLineGraphic(g) {
+  const path = document.createElementNS(svgNS, 'path');
+  // <path d="M 175 200 l 150 0" stroke="green" stroke-width="3" fill="none" />
+  if (g.LogicalPath) {
+    path.setAttribute('d', helper.getLogicalPath(g.LogicalPath));
+  } else {
+    path.setAttribute('d', helper.getPath(g.Points));
+  }
+
+  path.setAttribute('style', `stroke:${parseColor(g.Style.stroke, 'black')};stroke-width:1`);
+  if (g.Style.fill?.Draws === 'NO') {
+    path.setAttribute('fill', 'none');
+  } else {
+    path.setAttribute('fill', parseColor(g.Style?.fill, 'none'));
+  }
+
+  if (g.Style.stroke?.HeadArrow) {
+    path.setAttribute('marker-end', `url(#${arrows.get(g.Style.stroke?.HeadArrow)}_head)`);
+  }
+
+  if (g.Style.stroke?.TailArrow) {
+    path.setAttribute('marker-start', `url(#${arrows.get(g.Style.stroke?.TailArrow)}_tail)`);
+  }
+
+  if (g.Style.stroke.Pattern) {
+    path.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+  }
+  // <line x1="0" y1="0" x2="200" y2="200" style="stroke:rgb(255,0,0);stroke-width:2"/>
+  return path;
+}
+
+function renderCircle(g) {
+  //         <ellipse cx="300" cy="80" rx="100" ry="50"
+  //   style="fill:yellow;stroke:purple;stroke-width:2"/>
+  const ellipse = document.createElementNS(svgNS, 'ellipse');
+  const [x1, y1, width, height] = helper.parseBounds(g.Bounds);
+  ellipse.setAttribute('cx', x1 + width / 2);
+  ellipse.setAttribute('cy', y1 + height / 2);
+  ellipse.setAttribute('rx', width / 2);
+  ellipse.setAttribute('ry', height / 2);
+  if (g.Style.stroke && g.Style.stroke.Draws === 'NO') {
+    ellipse.setAttribute('style', `fill:${parseColor(g.Style.fill, 'none')};stroke:none;stroke-width:1`);
+  } else {
+    ellipse.setAttribute('style', `fill:${parseColor(g.Style.fill, 'none')};stroke:${parseColor(g.Style.stroke, 'black')};stroke-width:${getWidth(g.Style.stroke, 1)}`);
+  }
+  // if (g.Style.stroke && g.Style.stroke.Pattern) {
+  //     rect.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+  // }
+
+  if (g.Text?.Text) {
+    return wrapText(ellipse, g.Text?.Text, x1, y1, width, height);
+  }
+
+  return ellipse;
+}
+
+function renderDiamond(g) {
+  const polygon = document.createElementNS(svgNS, 'polygon');
+  const [x, y, width, height] = helper.parseBounds(g.Bounds);
+  const p1 = [x + width / 2, y].join(',');
+  const p2 = [x + width, y + height / 2].join(',');
+  const p3 = [x + width / 2, y + height].join(',');
+  const p4 = [x, y + height / 2].join(',');
+  polygon.setAttribute('points', [p1, p2, p3, p4].join(' '));
+  //   <polygon points="200,10 250,190 160,210"
+  // style="fill:lime;stroke:purple;stroke-width:1"/>
+  if (g.Style?.stroke?.Draws === 'NO') {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
+  } else {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
+  }
+  if (g.Style?.stroke?.Pattern) {
+    polygon.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+  }
+
+  if (g.Text?.Text) {
+    return wrapText(polygon, g.Text?.Text, x, y, width, height);
+  }
+
+  return polygon;
+}
+
+function renderVerticalTriangle(g) {
+  const polygon = document.createElementNS(svgNS, 'polygon');
+  const [x, y, width, height] = helper.parseBounds(g.Bounds);
+  const p1 = [x, y].join(',');
+  const p2 = [x + width, y].join(',');
+  const p3 = [x + width / 2, y + height].join(',');
+  polygon.setAttribute('points', [p1, p2, p3].join(' '));
+  //   <polygon points="200,10 250,190 160,210"
+  // style="fill:lime;stroke:purple;stroke-width:1"/>
+  if (g.Style?.stroke?.Draws === 'NO') {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
+  } else {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
+  }
+  if (g.Style?.stroke?.Pattern) {
+    polygon.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+  }
+
+  if (g.VFlip === 'YES') {
+    const [cx, cy] = [x + width/2, y + height / 2];
+    polygon.setAttribute('transform', `rotate(180, ${cx} ${cy})`);
+  }
+
+  if (g.Text?.Text) {
+    return wrapText(polygon, g.Text?.Text, x, y, width, height);
+  }
+
+  return polygon;
+}
+
+function renderHorizontalTriangle(g) {
+  const polygon = document.createElementNS(svgNS, 'polygon');
+  const [x, y, width, height] = helper.parseBounds(g.Bounds);
+  const p1 = [x, y].join(',');
+  const p2 = [x + width, y + height / 2].join(',');
+  const p3 = [x, y + height].join(',');
+  polygon.setAttribute('points', [p1, p2, p3].join(' '));
+  //   <polygon points="200,10 250,190 160,210"
+  // style="fill:lime;stroke:purple;stroke-width:1"/>
+  if (g.Style?.stroke?.Draws === 'NO') {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
+  } else {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
+  }
+  if (g.Style?.stroke?.Pattern) {
+    polygon.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+  }
+
+  if (g.VFlip === 'YES') {
+    const [cx, cy] = [x + width/2, y + height / 2];
+    polygon.setAttribute('transform', `rotate(180, ${cx} ${cy})`);
+  }
+
+  if (g.Text?.Text) {
+    return wrapText(polygon, g.Text?.Text, x, y, width, height);
+  }
+
+  return polygon;
+}
+
+function renderRightTriangle(g) {
+  const polygon = document.createElementNS(svgNS, 'polygon');
+  const [x, y, width, height] = helper.parseBounds(g.Bounds);
+  const p1 = [x, y].join(',');
+  const p2 = [x + width, y + height].join(',');
+  const p3 = [x, y + height].join(',');
+  polygon.setAttribute('points', [p1, p2, p3].join(' '));
+  //   <polygon points="200,10 250,190 160,210"
+  // style="fill:lime;stroke:purple;stroke-width:1"/>
+  if (g.Style?.stroke?.Draws === 'NO') {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
+  } else {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
+  }
+  if (g.Style?.stroke?.Pattern) {
+    polygon.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+  }
+
+  if (g.VFlip === 'YES') {
+    const [cx, cy] = [x + width/2, y + height / 2];
+    polygon.setAttribute('transform', `rotate(180, ${cx} ${cy})`);
+  }
+
+  if (g.Text?.Text) {
+    return wrapText(polygon, g.Text?.Text, x, y, width, height);
+  }
+
+  return polygon;
+}
+
+function renderPentagon(g) {
+  const polygon = document.createElementNS(svgNS, 'polygon');
+  const [x, y, width, height] = helper.parseBounds(g.Bounds);
+  const p1 = [x + width / 2, y].join(',');
+  const p2 = [x + width, y + height / 5 * 2].join(',');
+  const p3 = [x + width / 5 * 4, y + height].join(',');
+  const p4 = [x + width / 5, y + height].join(',');
+  const p5 = [x, y + height / 5 * 2].join(',');
+  polygon.setAttribute('points', [p1, p2, p3, p4, p5].join(' '));
+  //   <polygon points="200,10 250,190 160,210"
+  // style="fill:lime;stroke:purple;stroke-width:1"/>
+  if (g.Style?.stroke?.Draws === 'NO') {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
+  } else {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
+  }
+  if (g.Style?.stroke?.Pattern) {
+    polygon.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+  }
+
+  if (g.VFlip === 'YES') {
+    const [cx, cy] = [x + width/2, y + height / 2];
+    polygon.setAttribute('transform', `rotate(180, ${cx} ${cy})`);
+  }
+
+  if (g.Text?.Text) {
+    return wrapText(polygon, g.Text?.Text, x, y, width, height);
+  }
+
+  return polygon;
+}
+
+function renderOctagon(g) {
+  const polygon = document.createElementNS(svgNS, 'polygon');
+  const [x, y, width, height] = helper.parseBounds(g.Bounds);
+  const p1 = [x + width / 3 * 2, y].join(',');
+  const p2 = [x + width, y + height / 3].join(',');
+  const p3 = [x + width, y + height / 3 * 2].join(',');
+  const p4 = [x + width / 3 * 2, y + height].join(',');
+  const p5 = [x + width / 3, y + height].join(',');
+  const p6 = [x, y + height / 3 * 2].join(',');
+  const p7 = [x, y + height / 3].join(',');
+  const p8 = [x + width / 3, y].join(',');
+  polygon.setAttribute('points', [p1, p2, p3, p4, p5, p6, p7, p8].join(' '));
+  //   <polygon points="200,10 250,190 160,210"
+  // style="fill:lime;stroke:purple;stroke-width:1"/>
+  if (g.Style?.stroke?.Draws === 'NO') {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
+  } else {
+    polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
+  }
+  if (g.Style?.stroke?.Pattern) {
+    polygon.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+  }
+
+  if (g.VFlip === 'YES') {
+    const [cx, cy] = [x + width/2, y + height / 2];
+    polygon.setAttribute('transform', `rotate(180, ${cx} ${cy})`);
+  }
+
+  if (g.Text?.Text) {
+    return wrapText(polygon, g.Text?.Text, x, y, width, height);
+  }
+
+  return polygon;
+}
+
+function renderGraphic(g, sheet) {
   if (g.Class === 'LineGraphic') {
-    const path = document.createElementNS(svgNS, 'path');
-    // <path d="M 175 200 l 150 0" stroke="green" stroke-width="3" fill="none" />
-    if (g.LogicalPath) {
-      path.setAttribute('d', getLogicalPath(g.LogicalPath));
-    } else {
-      path.setAttribute('d', getPath(g.Points));
-    }
-
-    path.setAttribute('style', `stroke:${parseColor(g.Style.stroke, 'black')};stroke-width:1`);
-    if (g.Style.fill && g.Style.fill.Draws === 'NO') {
-      path.setAttribute('fill', 'none');
-    } else {
-      path.setAttribute('fill', parseColor(g.Style?.fill, 'none'));
-    }
-
-    if (g.Style.stroke?.HeadArrow === 'StickArrow') {
-      path.setAttribute('marker-end', 'url(#stick_arrow)');
-    }
-
-    if (g.Style.stroke?.TailArrow === 'StickArrow') {
-      path.setAttribute('marker-start', 'url(#stick_arrow2)');
-    }
-
-    if (g.Style.stroke.Pattern) {
-      path.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
-    }
-    // <line x1="0" y1="0" x2="200" y2="200" style="stroke:rgb(255,0,0);stroke-width:2"/>
-    return path;
+    return renderLineGraphic(g);
   }
 
   if (g.Class === 'ShapedGraphic' && g.Shape === 'Circle') {
-    //         <ellipse cx="300" cy="80" rx="100" ry="50"
-    //   style="fill:yellow;stroke:purple;stroke-width:2"/>
-    const ellipse = document.createElementNS(svgNS, 'ellipse');
-    const [x1, y1, width, height] = helper.parseBounds(g.Bounds);
-    ellipse.setAttribute('cx', x1 + width / 2);
-    ellipse.setAttribute('cy', y1 + height / 2);
-    ellipse.setAttribute('rx', width / 2);
-    ellipse.setAttribute('ry', height / 2);
-    if (g.Style.stroke && g.Style.stroke.Draws === 'NO') {
-      ellipse.setAttribute('style', `fill:${parseColor(g.Style.fill, 'none')};stroke:none;stroke-width:1`);
-    } else {
-      ellipse.setAttribute('style', `fill:${parseColor(g.Style.fill, 'none')};stroke:${parseColor(g.Style.stroke, 'black')};stroke-width:${getWidth(g.Style.stroke, 1)}`);
-    }
-    // if (g.Style.stroke && g.Style.stroke.Pattern) {
-    //     rect.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
-    // }
-
-    if (g.Text?.Text) {
-      return wrapText(ellipse, g.Text?.Text, x1, y1, width, height);
-    }
-
-    return ellipse;
+    return renderCircle(g);
   }
 
   if (g.Class === 'ShapedGraphic' && g.Shape === 'Diamond') {
-    const polygon = document.createElementNS(svgNS, 'polygon');
-    const [x, y, width, height] = helper.parseBounds(g.Bounds);
-    const p1 = [x + width / 2, y].join(',');
-    const p2 = [x + width, y + height / 2].join(',');
-    const p3 = [x + width / 2, y + height].join(',');
-    const p4 = [x, y + height / 2].join(',');
-    polygon.setAttribute('points', [p1, p2, p3, p4].join(' '));
-    //   <polygon points="200,10 250,190 160,210"
-    // style="fill:lime;stroke:purple;stroke-width:1"/>
-    if (g.Style?.stroke?.Draws === 'NO') {
-      polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
-    } else {
-      polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
-    }
-    if (g.Style?.stroke?.Pattern) {
-      polygon.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
-    }
-
-    if (g.Text?.Text) {
-      return wrapText(polygon, g.Text?.Text, x, y, width, height);
-    }
-
-    return polygon;
+    return renderDiamond(g);
   }
 
-  if (g.Class === 'ShapedGraphic') {
+  if (g.Class === 'ShapedGraphic' && g.Shape === 'VerticalTriangle') {
+    return renderVerticalTriangle(g);
+  }
+
+  if (g.Class === 'ShapedGraphic' && g.Shape === 'HorizontalTriangle') {
+    return renderHorizontalTriangle(g);
+  }
+
+  if (g.Class === 'ShapedGraphic' && g.Shape === 'RightTriangle') {
+    return renderRightTriangle(g);
+  }
+
+  if (g.Class === 'ShapedGraphic' && g.Shape === 'Pentagon') {
+    return renderPentagon(g);
+  }
+
+  if (g.Class === 'ShapedGraphic' && g.Shape === 'Octagon') {
+    return renderOctagon(g);
+  }
+
+  // exported shape
+  if (g.Class === 'ShapedGraphic' && g.Shape?.length === 59) {
+    const sharpId = g.Shape;
+    const s = sheet.ExportShapes.find((d) => d.ShapeName === sharpId);
+    const path = document.createElementNS(svgNS, 'path');
+    // <path d="M 175 200 l 150 0" stroke="green" stroke-width="3" fill="none" />
+    path.setAttribute('d', helper.getLogicalPath(s.StrokePath));
+    if (g.Style?.stroke?.Draws === 'NO') {
+      path.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
+    } else {
+      path.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
+    }
+
+    const rect = document.createElementNS(svgNS, 'rect');
+    const [x1, y1, width, height] = helper.parseBounds(g.Bounds);
+    rect.setAttribute('x', x1);
+    rect.setAttribute('y', y1);
+    // 圆角
+    const r = g.Style?.stroke?.CornerRadius || 0;
+    rect.setAttribute('rx', r);
+    rect.setAttribute('ry', r);
+
+    rect.setAttribute('width', width);
+    rect.setAttribute('height', height);
+
+    const box = document.createElementNS(svgNS, 'g');
+
+    box.appendChild(path);
+    box.appendChild(rect);
+    return box;
+  }
+
+  if (g.Class === 'ShapedGraphic' && !g.Shape) {
     const rect = document.createElementNS(svgNS, 'rect');
     const [x1, y1, width, height] = helper.parseBounds(g.Bounds);
     rect.setAttribute('x', x1);
@@ -345,19 +500,7 @@ function renderGraphic(g) {
     return gg;
   }
 
-  if (g.Class === 'ShapedGraphic') {
-    throw new Error('hehe');
-  }
-  //     Bounds: "{{0, 0}, {15, 22}}"
-  // Class: "ShapedGraphic"
-  // FitText: "YES"
-  // Flow: "Resize"
-  // ID: 2
-  // Style: {fill: {…}, shadow: {…}, stroke: {…}}
-  // Text: {TextAlongPathGlyphAnchor: "center"}
-  // Wrap: "NO"
-
-  console.log(g);
+  throw new Error('un-supported graphic');
 }
 
 function renderGraphics(sheet) {
@@ -374,7 +517,7 @@ function renderGraphics(sheet) {
 
   for (let i = 0; i < list.length; i++) {
     const g = list[i];
-    const element = renderGraphic(g);
+    const element = renderGraphic(g, sheet);
     if (element) {
       svgEl.appendChild(element);
     }
