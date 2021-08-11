@@ -430,6 +430,78 @@ function renderGraphic(g, sheet) {
     return renderOctagon(g);
   }
 
+  if (g.Class === 'ShapedGraphic' && g.Shape === 'AdjustableArrow') {
+    const {ratio, width: wd} = g.ShapeData;
+    const polygon = document.createElementNS(svgNS, 'polygon');
+    const [x, y, width, height] = helper.parseBounds(g.Bounds);
+    const p1 = [x, y + height * (1 - ratio) / 2].join(',');
+    const p2 = [x + width - wd, y + height * (1 - ratio) / 2].join(',');
+    const p3 = [x + width - wd, y].join(',');
+    const p4 = [x + width, y + height / 2].join(',');
+    const p5 = [x + width - wd, y + height].join(',');
+    const p6 = [x + width - wd, y + height * (1 - (1 - ratio) / 2)].join(',');
+    const p7 = [x, y + height * (1 - (1 - ratio) / 2)].join(',');
+
+    polygon.setAttribute('points', [p1, p2, p3, p4, p5, p6, p7].join(' '));
+    if (g.Style?.stroke?.Draws === 'NO') {
+      polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
+    } else {
+      polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
+    }
+    if (g.Style?.stroke?.Pattern) {
+      polygon.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+    }
+  
+    if (g.VFlip === 'YES') {
+      const [cx, cy] = [x + width/2, y + height / 2];
+      polygon.setAttribute('transform', `rotate(180, ${cx} ${cy})`);
+    }
+  
+    if (g.Text?.Text) {
+      return wrapText(polygon, g.Text?.Text, x, y, width, height);
+    }
+  
+    return polygon;
+  }
+
+  if (g.Class === 'ShapedGraphic' && g.Shape === 'AdjustableDoubleArrow') {
+    const {width: wd} = g.ShapeData;
+    const ratio = g.ShapeData.ratio || 0.5;
+    const polygon = document.createElementNS(svgNS, 'polygon');
+    const [x, y, width, height] = helper.parseBounds(g.Bounds);
+    const p1 = [x, y + height / 2].join(',');
+    const p2 = [x + wd, y].join(',');
+    const p3 = [x + wd, y + height * (1 - ratio) / 2].join(',');
+    const p4 = [x + width - wd, y + height * (1 - ratio) / 2].join(',');
+    const p5 = [x + width - wd, y].join(',');
+    const p6 = [x + width, y + height / 2].join(',');
+    const p7 = [x + width - wd, y + height].join(',');
+    const p8 = [x + width - wd, y + height * (1 - (1 - ratio) / 2)].join(',');
+    const p9 = [x + wd, y + height * (1 - (1 - ratio) / 2)].join(',');
+    const p10 = [x + wd, y + height].join(',');
+
+    polygon.setAttribute('points', [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10].join(' '));
+    if (g.Style?.stroke?.Draws === 'NO') {
+      polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:none;stroke-width:1`);
+    } else {
+      polygon.setAttribute('style', `fill:${parseColor(g.Style?.fill, 'none')};stroke:${parseColor(g.Style?.stroke, 'black')};stroke-width:${getWidth(g.Style?.stroke, 1)}`);
+    }
+    if (g.Style?.stroke?.Pattern) {
+      polygon.setAttribute('stroke-dasharray', pattern[g.Style.stroke.Pattern]);
+    }
+  
+    if (g.VFlip === 'YES') {
+      const [cx, cy] = [x + width/2, y + height / 2];
+      polygon.setAttribute('transform', `rotate(180, ${cx} ${cy})`);
+    }
+  
+    if (g.Text?.Text) {
+      return wrapText(polygon, g.Text?.Text, x, y, width, height);
+    }
+  
+    return polygon;
+  }
+
   // exported shape
   if (g.Class === 'ShapedGraphic' && g.Shape?.length === 59) {
     const sharpId = g.Shape;
