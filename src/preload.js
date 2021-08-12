@@ -155,6 +155,8 @@ function createDefs() {
   defs.appendChild(arrows.createArrowTail());
   defs.appendChild(arrows.createUMLInheritanceHead());
   defs.appendChild(arrows.createUMLInheritanceTail());
+  defs.appendChild(arrows.createFilledBallHead());
+  defs.appendChild(arrows.createFilledBallTail());
   return defs;
 }
 
