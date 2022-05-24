@@ -9,6 +9,7 @@ const StreamZip = require('node-stream-zip');
 // const icc = require('icc');
 const iconv = require('iconv-lite');
 const rtf = require('@jacksontian/rtf-parser');
+const bplist = require('bplist-parser');
 
 const helper = require('./helper');
 const { Controller } = require('./ui');
@@ -62,14 +63,18 @@ async function readGraffle(filePath) {
   console.log(filteredEntries);
 
   const entryData = await zip.entryData('data.plist');
-  const graffle = plist.parse(entryData.toString('utf-8'));
+  let graffle;
+  if (entryData.slice(0, 6).toString() === 'bplist') {
+    [graffle] = bplist.parseBuffer(entryData);
+  } else {
+    graffle = plist.parse(entryData.toString('utf-8'));
+  }
   graffle['!Preview'] = {
     type: 'jpeg',
     data: await zip.entryData('preview.jpeg')
   };
   await zip.close();
   return graffle;
-
 }
 
 const colorMap = {
