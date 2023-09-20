@@ -10,8 +10,8 @@
     "dist": "electron-builder -mwl"
   },
   "devDependencies": {
-    "electron": "^18",
-    "electron-builder": "^23.0.3",
+    "electron": "^26",
+    "electron-builder": "^23.6.0",
     "eslint": "^7.29.0"
   },
   "dependencies": {
